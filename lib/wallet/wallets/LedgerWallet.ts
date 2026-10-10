@@ -89,7 +89,7 @@ export class LedgerWallet implements AbstractWallet {
         const signer = await this.getSigner()
         const ethAddr = ethermintToEth(tx.signerAddress)
 
-        // this.signer.prefix = fromBech32(signerAddress).prefix
+        // this.signer.prefix = fromBech32(signerAddress, 1023).prefix
         const account = await signer.getAccounts()
 
         const acc = account.find(x => x.address === ethAddr)
@@ -160,10 +160,10 @@ export class LedgerWallet implements AbstractWallet {
         // assert(!isOfflineDirectSigner(signer));
 
         const accounts = await this.getAccounts()
-        const {data} = fromBech32(tx.signerAddress)
+        const {data} = fromBech32(tx.signerAddress, 1023)
         const hex = toHex(data)
         const signerAddress = toBech32("cosmos", data)
-        const accountFromSigner = accounts.find((account) => toHex(fromBech32(account.address).data) === hex);
+        const accountFromSigner = accounts.find((account) => toHex(fromBech32(account.address, 1023).data) === hex);
         if (!accountFromSigner) {
             throw new Error("Failed to retrieve account from signer");
         }

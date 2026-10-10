@@ -1,4 +1,5 @@
 <script lang="ts" setup>
+import BigNumber from 'bignumber.js';
 import { PropType, computed, onMounted, ref } from 'vue';
 import { getDelegations } from '../../../utils/http'
 import { Coin, CoinMetadata } from '../../../utils/type';
@@ -58,20 +59,24 @@ const isValid = computed(() => {
         ok = false
         error = "Amount should be great than 0"
     }
+    if (!new BigNumber(available.value.base.amount || '0').gt(0)) { ok = false; error = 'No delegation balance available for this validator'; }
+    if (!new BigNumber(msgs.value[0].value.amount.amount || '0').lte(available.value.base.amount || '0')) { ok = false; error = 'Amount exceeds available balance'; }
     return { ok, error }
 })
 
 function initial() {
     getDelegations(props.endpoint, params.value.validator_address, props.sender).then(x => {
-        delegation.value = x.delegation_response
+        delegation.value = x?.delegation_response || { balance: { amount: '0', denom: '' } };
+        error.value = x?.delegation_response?.balance ? '' : 'No delegation balance available for this validator'
     }).catch(err => {
-        error.value = err
+        delegation.value = { balance: { amount: '0', denom: '' } } as typeof delegation.value;
+        error.value = String(err)
     })   
 }
 
 const available = computed(() => {
     const convert = new TokenUnitConverter(props.metadata);
-    const base = delegation.value?.balance || {amount: "", denom: ""}
+    const base = delegation.value?.balance || {amount: "0", denom: ""}
     return {
         base,
         display: convert.baseToUnit(base, amountDenom.value),
@@ -94,6 +99,7 @@ defineExpose({msgs, isValid, initial})
             </label>
             <label class="input-group">
                 <input v-model="amount" type="number" :placeholder="`Avaiable: ${available.display?.amount}`" class="input border border-gray-300 dark:border-gray-600 w-full dark:text-white" />
+                <button type="button" class="btn btn-outline" @click="amount = available.display.amount">MAX</button>
                 <select v-model="amountDenom" class="select select-bordered dark:text-white">
                     <option v-for="u in units">{{ u.denom }}</option>
                 </select>

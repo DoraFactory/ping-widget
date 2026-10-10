@@ -7,8 +7,8 @@ import { SignMode } from "cosmjs-types/cosmos/tx/signing/v1beta1/signing";
 import { AbstractWallet, WalletArgument, WalletName, createWallet } from "./Wallet";
 import { post } from "../utils/http";
 import { BroadcastMode, Transaction, TxResponse } from "../utils/type";
-import { wasmTypes } from "@cosmjs/cosmwasm-stargate/build/modules";
-import { makeAuthInfoBytes, makeSignDoc, TxBodyEncodeObject } from "@cosmjs/proto-signing/build";
+import { wasmTypes } from "@cosmjs/cosmwasm-stargate";
+import { makeAuthInfoBytes, makeSignDoc, TxBodyEncodeObject } from "@cosmjs/proto-signing";
 import { Any } from "cosmjs-types/google/protobuf/any";
 
 export function isEthermint(chainId: string) {

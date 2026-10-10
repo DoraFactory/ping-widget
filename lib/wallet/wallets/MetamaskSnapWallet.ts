@@ -55,9 +55,9 @@ export class MetamaskSnapWallet implements AbstractWallet {
 
     async sign(transaction: Transaction): Promise<TxRaw | Uint8Array> {
         const accouts = await this.getAccounts();
-        const hex = toHex(fromBech32(transaction.signerAddress).data);
+        const hex = toHex(fromBech32(transaction.signerAddress, 1023).data);
         const accountFromSigner = accouts.find(
-            (account) => toHex(fromBech32(account.address).data) === hex
+            (account) => toHex(fromBech32(account.address, 1023).data) === hex
         );
         if (!accountFromSigner) {
             throw new Error('Failed to retrieve account from signer');

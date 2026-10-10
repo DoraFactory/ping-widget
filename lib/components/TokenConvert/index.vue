@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { parseAccountNumber, parseSequence } from "../../utils/accountNumber";
 import { computed, onMounted, ref } from 'vue';
 import { Icon } from '@iconify/vue';
 import { fromBech32, toBech32, toHex } from '@cosmjs/encoding';
@@ -138,13 +139,13 @@ async function initData() {
 
 function osmoAddress(addr?: string) {
     if (!addr) return '';
-    const { data } = fromBech32(addr);
+    const { data } = fromBech32(addr, 1023);
     return toBech32('osmo', data);
 }
 
 function localAddress(addr?: string) {
     if (!addr) return '';
-    const { data } = fromBech32(addr);
+    const { data } = fromBech32(addr, 1023);
     const prefix = localChainInfo.value?.bech32_prefix || 'cosmos';
     return toBech32(prefix, data);
 }
@@ -463,8 +464,8 @@ async function doDeposit() {
         memo: '',
         signerData: {
             chainId: chainId.value,
-            accountNumber: Number(acc.account.account_number),
-            sequence: Number(acc.account.sequence),
+            accountNumber: parseAccountNumber(acc.account.account_number),
+            sequence: parseSequence(acc.account.sequence),
         },
     };
 

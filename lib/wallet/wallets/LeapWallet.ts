@@ -48,8 +48,8 @@ export class LeapWallet implements AbstractWallet {
     // because signDirect is not supported ledger wallet
     async signDirect(transaction: Transaction): Promise<TxRaw> {
         const accouts = await this.getAccounts()
-        const hex = toHex(fromBech32(transaction.signerAddress).data)
-        const accountFromSigner = accouts.find((account) => toHex(fromBech32(account.address).data) === hex);
+        const hex = toHex(fromBech32(transaction.signerAddress, 1023).data)
+        const accountFromSigner = accouts.find((account) => toHex(fromBech32(account.address, 1023).data) === hex);
         if (!accountFromSigner) {
             throw new Error("Failed to retrieve account from signer");
         }
@@ -90,8 +90,8 @@ export class LeapWallet implements AbstractWallet {
 
     async signAmino(tx: Transaction): Promise<TxRaw> {
         const accouts = await this.getAccounts()
-        const hex = toHex(fromBech32(tx.signerAddress).data)
-        const accountFromSigner = accouts.find((account) => toHex(fromBech32(account.address).data) === hex);
+        const hex = toHex(fromBech32(tx.signerAddress, 1023).data)
+        const accountFromSigner = accouts.find((account) => toHex(fromBech32(account.address, 1023).data) === hex);
         if (!accountFromSigner) {
             throw new Error("Failed to retrieve account from signer");
         }

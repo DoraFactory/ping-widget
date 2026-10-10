@@ -6,7 +6,7 @@ export const ethToEthermint = (ethAddress: string, prefix: string) => {
 }
 
 export const ethermintToEth = (ethermintAddress: string) => {
-  const { data } = fromBech32(ethermintAddress)
+  const { data } = fromBech32(ethermintAddress, 1023)
   return `0x${toHex(data)}`
 }
 

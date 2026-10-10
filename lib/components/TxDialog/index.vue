@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { parseAccountNumber, parseSequence } from "../../utils/accountNumber";
 import { ref, computed } from 'vue';
 import {
     getAccount,
@@ -108,6 +109,9 @@ const broadcast = ref(BroadcastMode.SYNC);
 async function initData() {
     if (open.value && props.endpoint && props.sender) {
         metadatas.value = {}
+        if (['doravota', 'doravotatestnet'].includes(props.registryName || '')) {
+            metadatas.value.peaka = { description: 'Dora Vota native token', base: 'peaka', display: 'DORA', name: 'Dora', symbol: 'DORA', uri: '', uri_hash: '', denom_units: [{ denom: 'peaka', exponent: 0, aliases: [] }, { denom: 'DORA', exponent: 18, aliases: ['dora'] }] };
+        }
         view.value = 'input';
         p.value = JSON.parse(props.params || '{}')
         memo.value = props.type?.toLowerCase() === 'send' ? '' : 'ping.pub'
@@ -168,6 +172,7 @@ async function initData() {
 }
 async function sendTx() {
     try {
+        if (['doravota', 'doravotatestnet'].includes(props.registryName || '') && props.type?.startsWith('wasm_')) throw new Error('Wasm execution is retired on Vota 1.0.0');
         if (!props.sender) throw new Error('Sender should not be empty!');
         if (!props.endpoint) throw new Error('Endpoint is empty');
         if (!feeDenom.value) throw new Error('Fee Denom is empty');
@@ -191,8 +196,8 @@ async function sendTx() {
             },
             memo: memo.value,
             signerData: {
-                accountNumber: Number(acc.account.account_number),
-                sequence: Number(acc.account.sequence),
+                accountNumber: parseAccountNumber(acc.account.account_number),
+                sequence: parseSequence(acc.account.sequence),
                 chainId: chainId.value,
             },
         };
@@ -201,7 +206,7 @@ async function sendTx() {
         const wallet = current ? current.wallet : WalletName.Keplr;
         const client = new UniClient(wallet, {
             chainId: chainId.value,
-            hdPath: current.hdPath,
+            hdPath: current?.hdPath,
         });
 
         if(!advance.value) {
@@ -368,7 +373,7 @@ function fetchTx(tx: string) {
                                     class="checkbox checkbox-sm checkbox-primary mr-2" /><label :for="`${type}-advance`"
                                     class="cursor-pointer dark:text-gray-400">Advance</label>
                             </div>
-                            <button class="btn btn-primary" @click="sendTx()" :disabled="sending">
+                            <button class="btn btn-primary" @click="sendTx()" :disabled="sending || !msgBox.isValid.ok">
                                 <span v-if="sending" class="loading loading-spinner"></span>
                                 Send
                             </button>

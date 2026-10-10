@@ -21,3 +21,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Source fork: build with the committed npm lock; do not retain stale bundles.
+dist/

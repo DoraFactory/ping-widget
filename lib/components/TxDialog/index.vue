@@ -12,7 +12,10 @@ import {
 } from '../../utils/http';
 import { BroadcastMode, Coin, CoinMetadata } from '../../utils/type';
 import { WalletName, readWallet } from '../../../lib/wallet/Wallet';
-import { UniClient } from '../../../lib/wallet/UniClient';
+import { sha256 } from '@cosmjs/crypto';
+import { toHex } from '@cosmjs/encoding';
+import { TxRaw } from 'cosmjs-types/cosmos/tx/v1beta1/tx';
+import { UniClient, BroadcastRejectedError } from '../../../lib/wallet/UniClient';
 
 // cosmos sdk messages
 import Delegate from './messages/Delegate.vue';
@@ -171,6 +174,7 @@ async function initData() {
     }
 }
 async function sendTx() {
+    let attemptedHash = '';
     try {
         if (['doravota', 'doravotatestnet'].includes(props.registryName || '') && props.type?.startsWith('wasm_')) throw new Error('Wasm execution is retired on Vota 1.0.0');
         if (!props.sender) throw new Error('Sender should not be empty!');
@@ -223,7 +227,9 @@ async function sendTx() {
         }
 
         const txRaw = await client.sign(tx);
+        attemptedHash = toHex(sha256(TxRaw.encode(txRaw).finish())).toUpperCase();
         const response = await client.broadcastTx(props.endpoint, txRaw, broadcast.value);
+        if (response.tx_response.txhash.toUpperCase() !== attemptedHash) throw new Error('Broadcast hash mismatch');
         // show submitting view
         hash.value = response.tx_response.txhash
         showResult(response.tx_response.txhash);
@@ -233,8 +239,14 @@ async function sendTx() {
             eventType: props.type,
         });
     } catch (e) {
-        sending.value = false;
-        error.value = String(e);
+        if (attemptedHash && !(e instanceof BroadcastRejectedError)) {
+            hash.value = attemptedHash;
+            showResult(attemptedHash);
+            msg.value = 'Broadcast result unknown. Checking the transaction hash. Do not send again.';
+        } else {
+            sending.value = false;
+            error.value = String(e);
+        }
     }
 }
 
@@ -254,14 +266,16 @@ const delay = ref(0);
 const step = ref(0);
 const msg = ref('');
 const sleep = 6000;
-const hash = ref('')
+const hash = ref('');
+const pending = ref(false);
 
 function showResult(hash: string) {
     view.value = 'submitting';
     delay.value = 1;
     step.value = 20;
     error.value = '';
-    msg.value = 'Proccessing...';
+    pending.value = true;
+    msg.value = 'Checking transaction. Do not send again until the result is confirmed.';
     setTimeout(() => {
         fetchTx(hash);
     }, sleep);
@@ -272,8 +286,11 @@ function fetchTx(tx: string) {
     step.value += 20;
     getTxByHash(props.endpoint, tx)
         .then((res) => {
+            const response = res.tx_response;
+            if (!response || response.txhash?.toUpperCase() !== tx.toUpperCase() || !/^[0-9]+$/.test(String(response.code)) || Number(response.height) <= 0) throw new Error('Transaction not confirmed');
+            pending.value = false;
             step.value = 100;
-            if (res.tx_response.code > 0) {
+            if (Number(response.code) > 0) {
                 error.value = res.tx_response.raw_log;
             } else {
                 msg.value = `Congratulations! ${showTitle()} completed successfully.`;
@@ -284,7 +301,8 @@ function fetchTx(tx: string) {
             if (delay.value < 5) {
                 setTimeout(() => fetchTx(tx), sleep);
             } else {
-                error.value = 'Timeout';
+                step.value = 0;
+                msg.value = 'Result pending confirmation. The transaction may already be on chain. Check this hash before sending again.';
             }
         });
 }
@@ -385,7 +403,7 @@ function fetchTx(tx: string) {
                             <div v-if="error" class="my-5 text-center text-red-500">
                                 {{ error }}
                             </div>
-                            <div v-else class="my-5 text-center text-lg text-green-500">
+                            <div v-else :class="pending ? 'my-5 text-center text-lg text-amber-600' : 'my-5 text-center text-lg text-green-500'">
                                 {{ msg }}
                             </div>
                             <div class="overflow-hidden h-5 mb-2 text-xs flex rounded bg-green-100">
@@ -407,6 +425,8 @@ function fetchTx(tx: string) {
                                 </div>
                             </div>
                         </div>
+                        <p class="text-xs break-all">Transaction hash: {{ hash }}</p>
+                        <button v-if="pending && delay >= 5" class="btn btn-sm" @click="showResult(hash)">Check status</button>
                         <label class="mt-10 flex justify-center text-sm" @click="viewTransaction">
                             <span>View Transaction</span>
                         </label>

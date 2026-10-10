@@ -9,3 +9,9 @@ Build with Node 22 and `npm ci && npm run build`. The root package-lock.json is 
 The isolated browser tests use disposable software signers and do not certify real wallet extensions or hardware devices. Direct and Amino adapters must be separately verified against deployed wallet versions. Ethermint, swaps and non-Vota integrations are outside this validation scope. Older transitive Cosmos libraries still exist in legacy multi-chain adapters; they are not represented as upgraded or audited by changing the direct CosmJS dependencies.
 
 No production deployment or npm publication is implied by this candidate.
+
+## Transaction confirmation
+
+The Vota transaction dialog computes the signed transaction hash before broadcasting. Network errors, invalid responses and delayed indexing lead to a pending-confirmation view, not a failed-payment prompt. Check status only queries the same hash; it does not sign or broadcast again. Explicit chain rejection remains an error. This behavior does not prevent a user from creating another transaction outside the dialog.
+
+Use the committed npm lock, Node 22, and npm ci in a clean directory; do not mix a locally generated yarn.lock into the build.

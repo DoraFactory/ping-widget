@@ -11,6 +11,8 @@ import { wasmTypes } from "@cosmjs/cosmwasm-stargate";
 import { makeAuthInfoBytes, makeSignDoc, TxBodyEncodeObject } from "@cosmjs/proto-signing";
 import { Any } from "cosmjs-types/google/protobuf/any";
 
+export class BroadcastRejectedError extends Error {}
+
 export function isEthermint(chainId: string) {
   return chainId.search(/\w+_\d+-\d+/g) > -1
 }
@@ -134,11 +136,12 @@ export class UniClient {
     }
     return post(`${endpoint}/cosmos/tx/v1beta1/txs`, txRaw).then(res => {
       if (res.code && res.code !== 0) {
-        throw new Error(res.message)
+        throw new BroadcastRejectedError(res.message)
       }
-      if (res.tx_response && res.tx_response.code !== 0) {
-        throw new Error(res.tx_response.raw_log)
+      if (res.tx_response && Number.isInteger(Number(res.tx_response.code)) && Number(res.tx_response.code) !== 0) {
+        throw new BroadcastRejectedError(res.tx_response.raw_log)
       }
+      if (!res.tx_response || !/^[0-9a-f]{64}$/i.test(res.tx_response.txhash || "") || res.tx_response.code === undefined) throw new Error("Unrecognized broadcast response");
       return res
     })
   }

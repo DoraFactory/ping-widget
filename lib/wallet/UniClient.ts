@@ -136,7 +136,7 @@ export class UniClient {
     }
     return post(`${endpoint}/cosmos/tx/v1beta1/txs`, txRaw).then(res => {
       if (res.code && res.code !== 0) {
-        throw new BroadcastRejectedError(res.message)
+        throw new Error(res.message)
       }
       if (res.tx_response && Number.isInteger(Number(res.tx_response.code)) && Number(res.tx_response.code) !== 0) {
         throw new BroadcastRejectedError(res.tx_response.raw_log)

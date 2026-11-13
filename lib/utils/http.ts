@@ -1,8 +1,24 @@
 import fetch from 'cross-fetch'
 import { Coin, CoinMetadata, TxResponse } from './type'
 
-export async function get(url: string) {
-    return (await fetch(url)).json()
+const pendingGets = new Map<string, Promise<any>>();
+export function get(url: string) {
+    const existing = pendingGets.get(url);
+    if (existing) return existing;
+    const pending = readJson(url).finally(() => pendingGets.delete(url));
+    pendingGets.set(url, pending);
+    return pending;
+}
+async function readJson(url: string) {
+    try {
+        const response = await fetch(url, { signal: AbortSignal.timeout(10000) });
+        if (!response.ok) throw Error(`Network request failed (${response.status}). Please retry.`);
+        return await response.json();
+    } catch (err: any) {
+        if (err?.name === 'AbortError' || err?.name === 'TimeoutError')
+            throw Error('Network request timed out. Please retry.');
+        throw err;
+    }
 }
 
 export async function post(url: string, data: any) {
@@ -45,6 +61,14 @@ function findField(obj: any, name: string) {
 export async function getLatestBlock(endpoint: string) {
     const url = `${endpoint}/cosmos/base/tendermint/v1beta1/blocks/latest`
     return get(url)
+}
+
+// Fetch identity without downloading a full block and its large consensus signatures.
+export async function getChainId(endpoint: string): Promise<string> {
+    const data = await get(`${endpoint}/cosmos/base/tendermint/v1beta1/node_info`);
+    const id = data.default_node_info?.network;
+    if (typeof id !== 'string' || !id) throw Error('Network identity unavailable');
+    return id;
 }
 
 export async function getAccount(endpoint: string, address: string) {

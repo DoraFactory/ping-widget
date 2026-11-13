@@ -49,7 +49,7 @@ const msgs = computed(() => {
                 }),
                 sender: props.sender,
                 receiver: recipient.value,
-                timeoutTimestamp: String(timeout.utc().valueOf() * 1000000),
+                timeoutTimestamp: (BigInt(timeout.utc().valueOf()) * 1000000n).toString(),
             },
         },
     ];

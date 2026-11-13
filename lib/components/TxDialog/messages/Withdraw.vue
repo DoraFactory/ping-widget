@@ -38,7 +38,8 @@ const isValid = computed(() => {
 
 function initial() {
     getDelegateRewards(props.endpoint, props.sender).then(x => {
-        rewards.value = x.rewards
+        const selected = JSON.parse(props.params || '{}').validator_address;
+        rewards.value = selected ? x.rewards.filter(r => r.validator_address === selected) : x.rewards
     })
 }
 

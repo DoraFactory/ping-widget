@@ -16,6 +16,7 @@ import {
     getStakingParam,
     getOsmosisPools,
     getLatestBlock,
+    getChainId,
     getAccount,
     getTxByHash,
 } from '../../utils/http';
@@ -33,6 +34,7 @@ import { tokens, type TokenConfig } from './tokens';
 import { decimal2percent } from '../../utils/format';
 import { StdFee, coin } from '@cosmjs/stargate';
 import Long from 'long';
+import BigNumber from 'bignumber.js';
 import { UniClient } from '../../wallet/UniClient';
 
 const props = defineProps({
@@ -432,12 +434,11 @@ async function doDeposit() {
 
     if (!swapIn.value || !address) return;
 
-    const latest = await getLatestBlock(props.endpoint);
+    const chainId = await getChainId(props.endpoint);
     const acc = await getAccount(props.endpoint, address);
-
-    const chainId = latest.block.header.chain_id;
-    const timeout = Date.now() + new Date().getTimezoneOffset() + 3600000;
-    const amount = Number(depositAmount.value || 0) * 10 ** swapIn.value.decimals;
+    const timeout = Date.now() + 3600000;
+    const amount = new BigNumber(depositAmount.value || '0').times(new BigNumber(10).pow(swapIn.value.decimals));
+    if (!amount.isFinite() || !amount.isInteger() || !amount.gt(0)) { sending.value = false; error.value = 'Invalid token amount'; return; }
     const tx = {
         chainId,
         signerAddress: address,
@@ -448,7 +449,7 @@ async function doDeposit() {
                     sourcePort: 'transfer',
                     sourceChannel: localSourceChannelID.value || '',
                     token: {
-                        amount: String(amount),
+                        amount: amount.toFixed(0),
                         denom: swapIn.value.denom,
                     },
                     sender: address,
@@ -463,18 +464,17 @@ async function doDeposit() {
         },
         memo: '',
         signerData: {
-            chainId: chainId.value,
+            chainId,
             accountNumber: parseAccountNumber(acc.account.account_number),
             sequence: parseSequence(acc.account.sequence),
         },
     };
 
     try {
-        const client = new UniClient(WalletName.Keplr, { chainId });
+        const client = new UniClient(sender.value.wallet || WalletName.Keplr, { chainId });
 
         //   console.log("gasInfo:", gasInfo)
-        const txRaw = await client.sign(tx);
-        const response = await client.broadcastTx(props.endpoint, txRaw);
+        const response = await client.execute(props.endpoint, tx);
         if (response.tx_response?.code === 0) {
             setTimeout(async () => {
                 await getBalance(
@@ -531,7 +531,7 @@ async function doWithdraw() {
 
         if (!swapIn.value || !swapOut.value || !address) return;
 
-        const timeout = Date.now() + new Date().getTimezoneOffset() + 3600000;
+        const timeout = Date.now() + 3600000;
         const amount = Number(withdrawAmount.value || 0);
         const { transfer } =
             ibc.applications.transfer.v1.MessageComposer.withTypeUrl;

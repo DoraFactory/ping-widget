@@ -54,7 +54,7 @@ export class KeplerWallet implements AbstractWallet {
         const hex = toHex(fromBech32(transaction.signerAddress, 1023).data)
         const accountFromSigner = accouts.find((account) => toHex(fromBech32(account.address, 1023).data) === hex);
         if (!accountFromSigner) {
-            throw new Error("Failed to retrieve account from signer");
+            throw new Error(`Keplr does not have the sender account ${transaction.signerAddress} selected on ${this.chainId}. Switch to that account in Keplr, then disconnect and reconnect your wallet. No transaction was signed or broadcast.`);
         }
         const pubkey = Any.fromPartial({
             typeUrl: keyType(transaction.chainId),
@@ -95,7 +95,7 @@ export class KeplerWallet implements AbstractWallet {
         const hex = toHex(fromBech32(tx.signerAddress, 1023).data)
         const accountFromSigner = accouts.find((account) => toHex(fromBech32(account.address, 1023).data) === hex);
         if (!accountFromSigner) {
-            throw new Error("Failed to retrieve account from signer");
+            throw new Error(`Keplr does not have the sender account ${tx.signerAddress} selected on ${this.chainId}. Switch to that account in Keplr, then disconnect and reconnect your wallet. No transaction was signed or broadcast.`);
         }
         // const pubkey = encodePubkey(encodeSecp256k1Pubkey(accountFromSigner.pubkey));
         const pubkey = Any.fromPartial({

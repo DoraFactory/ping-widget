@@ -11,7 +11,10 @@ import { wasmTypes } from "@cosmjs/cosmwasm-stargate";
 import { makeAuthInfoBytes, makeSignDoc, TxBodyEncodeObject } from "@cosmjs/proto-signing";
 import { Any } from "cosmjs-types/google/protobuf/any";
 
-export class BroadcastRejectedError extends Error {}
+export class BroadcastRejectedError extends Error {
+  txResponse: any
+  constructor(message: string, response?: any) { super(message); this.txResponse = response; }
+}
 
 export function isEthermint(chainId: string) {
   return chainId.search(/\w+_\d+-\d+/g) > -1
@@ -20,9 +23,31 @@ export function isEthermint(chainId: string) {
 export class UniClient {
     registry: Registry
     wallet: AbstractWallet
+    walletName: WalletName
     constructor(name: WalletName, arg: WalletArgument) {
+        this.walletName = name
         this.registry = new Registry([...defaultRegistryTypes, ...wasmTypes])
         this.wallet = createWallet(name, arg, this.registry)
+    }
+
+    // One explicit integration point for host applications; wallet APIs stay untouched.
+    async execute(endpoint: string, transaction: Transaction, mode = BroadcastMode.SYNC,
+        prepareClassic: (tx: Transaction) => Promise<void> = async () => {},
+        onProgress?: (status: {title: string; description: string}) => void) {
+        transaction = structuredClone(transaction);
+        const classic = async (checkpoint: (stage: string, details?: any) => Promise<void> = async () => {}) => {
+            const tx = structuredClone(transaction);
+            await prepareClassic(tx);
+            await checkpoint('sign');
+            const raw = await this.sign(tx);
+            const { sha256 } = await import('@cosmjs/crypto');
+            const hash = toHex(sha256(TxRaw.encode(raw).finish())).toUpperCase();
+            await checkpoint('broadcast', { hash });
+            return this.broadcastTx(endpoint, raw, mode);
+        };
+        const coordinator = (window as any).doraPqcTransactions;
+        if (coordinator) return coordinator.execute({ transaction, wallet: this.walletName, onProgress }, classic);
+        return classic();
     }
 
     async getAccounts() {
@@ -139,7 +164,7 @@ export class UniClient {
         throw new Error(res.message)
       }
       if (res.tx_response && Number.isInteger(Number(res.tx_response.code)) && Number(res.tx_response.code) !== 0) {
-        throw new BroadcastRejectedError(res.tx_response.raw_log)
+        throw new BroadcastRejectedError(res.tx_response.raw_log, res.tx_response)
       }
       if (!res.tx_response || !/^[0-9a-f]{64}$/i.test(res.tx_response.txhash || "") || res.tx_response.code === undefined) throw new Error("Unrecognized broadcast response");
       return res

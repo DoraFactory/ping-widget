@@ -13,12 +13,14 @@ const props = defineProps({
     endpoint: { type: String, required: true },
     sender: { type: String, required: true },
     balances: Object as PropType<Coin[]>,
+    balanceReady: { type: Boolean, default: true },
     metadata: Object as PropType<Record<string, CoinMetadata>>,
     params: String,
 });
 const params = computed(() => JSON.parse(props.params || '{}'));
 
 const validator = ref('');
+const optionsLoading = ref(false);
 
 const activeValidators = ref([]);
 const inactiveValidators = ref([]);
@@ -102,22 +104,25 @@ const isValid = computed(() => {
     return { ok, error };
 });
 
-function initial() {
+let loadRevision = 0;
+async function initial() {
+    const revision = ++loadRevision;
+    optionsLoading.value = true;
     activeValidators.value = [];
-    validator.value = params.value.validator_address;
-    getStakingParam(props.endpoint).then((x) => {
-        stakingDenom.value = x.params.bond_denom;
-        unbondingTime.value = x.params.unbonding_time;
-    });
-
-    getActiveValidators(props.endpoint).then((x) => {
-        activeValidators.value = x.validators;
-        if (!params.value.validator_address) {
-            validator.value = x.validators.find(
-                (v) => v.description.identity === '6783E9F948541962'
-            )?.operator_address;
-        }
-    });
+    inactiveValidators.value = [];
+    validator.value = params.value.validator_address || '';
+    try {
+    const [staking, validators] = await Promise.all([
+        params.value.staking_options?.params?.bond_denom
+            ? Promise.resolve({params: params.value.staking_options.params}) : getStakingParam(props.endpoint),
+        Array.isArray(params.value.staking_options?.validators) && params.value.staking_options.validators.length
+            ? Promise.resolve({validators: params.value.staking_options.validators}) : getActiveValidators(props.endpoint),
+    ]);
+    if (revision !== loadRevision) return;
+    stakingDenom.value = staking.params.bond_denom;
+    unbondingTime.value = staking.params.unbonding_time;
+    activeValidators.value = validators.validators;
+    } finally { if (revision === loadRevision) optionsLoading.value = false; }
 }
 
 defineExpose({ msgs, isValid, initial });
@@ -142,7 +147,8 @@ defineExpose({ msgs, isValid, initial });
                 >
             </label>
             <select v-model="validator" class="select select-bordered dark:text-white">
-                <option value="">Select a validator</option>
+                <option v-if="optionsLoading" :value="validator">Loading validators…</option>
+                <option v-else value="">Select a validator</option>
                 <option v-for="v in list" :value="v.operator_address">
                     {{ v.description.moniker }} ({{
                         decimal2percent(v.commission.commission_rates.rate)
@@ -154,15 +160,15 @@ defineExpose({ msgs, isValid, initial });
         <div class="form-control">
             <label class="label">
                 <span class="label-text">Amount</span>
-                <span> 
-                    {{ available?.display.amount }} {{ available?.display.denom }}
+                <span class="text-sm text-gray-500 dark:text-gray-300">
+                    {{ balanceReady && stakingDenom ? `${available?.display.amount} ${available?.display.denom}` : 'Balance checked before signing' }}
                 </span>
             </label>
             <label class="join">
                 <input
                     v-model="amount"
                     type="number"
-                    :placeholder="`Available: ${available?.display.amount}`"
+                    :placeholder="balanceReady && stakingDenom ? `Available: ${available?.display.amount}` : 'Enter amount'"
                     class="input border border-gray-300 dark:border-gray-600 w-full join-item dark:text-white"
                 />
                 <select v-model="amountDenom" class="select select-bordered join-item dark:text-white">

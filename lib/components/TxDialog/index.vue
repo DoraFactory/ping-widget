@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { transactionResult } from '../../utils/transactionResult';
 import { parseAccountNumber, parseSequence } from "../../utils/accountNumber";
 import { ref, computed, watch, nextTick, onUnmounted } from 'vue';
 import {
@@ -268,10 +269,14 @@ async function sendTx() {
         }, status => {
             if (!active()) return;
             progress.value = status; view.value = 'processing'; error.value = '';
+        }, {
+            assertActive() { if (!active()) throw Error('Operation cancelled before broadcast'); },
+            onBroadcast(txhash) { attemptedHash = txhash.toUpperCase(); },
         });
         if (!active()) return;
-        attemptedHash = response.tx_response.txhash.toUpperCase();
-        if (response.tx_response.txhash.toUpperCase() !== attemptedHash) throw new Error('Broadcast hash mismatch');
+        // A resumed pending result is supplied by the coordinator's saved journal.
+        if (!attemptedHash && response.broadcastUnknown) attemptedHash = response.tx_response.txhash.toUpperCase();
+        transactionResult(response.tx_response, attemptedHash);
         // show submitting view
         hash.value = response.tx_response.txhash
         if (response.tx_response.state === 'rejected') {
@@ -284,9 +289,10 @@ async function sendTx() {
             hash: response.tx_response.txhash,
             eventType,
         });
-    } catch (e) {
+    } catch (e: any) {
         if (!active()) return;
-        if (attemptedHash && !(e instanceof BroadcastRejectedError)) {
+        if (!attemptedHash && /^[0-9a-f]{64}$/i.test(e.txhash || '')) attemptedHash = e.txhash.toUpperCase();
+        if (attemptedHash && e.code !== 'BROADCAST_NOT_ATTEMPTED' && !(e instanceof BroadcastRejectedError)) {
             hash.value = attemptedHash;
             showResult(attemptedHash);
             msg.value = 'Broadcast result unknown. Checking the transaction hash. Do not send again.';
@@ -350,7 +356,7 @@ function fetchTx(tx: string, revision: number, endpoint: string, eventType: stri
         });
 }
 function acceptReceipt(response: any, tx: string, eventType: string | undefined) {
-    if (!response || response.txhash?.toUpperCase() !== tx.toUpperCase() || !/^[0-9]+$/.test(String(response.code)) || Number(response.height) <= 0) throw new Error('Transaction not confirmed');
+    response = transactionResult(response, tx, true);
     view.value = 'submitting'; pending.value = false; step.value = 100;
     error.value = ''; sending.value = false;
     if (Number(response.code) > 0) error.value = response.raw_log || 'Transaction execution failed.';
@@ -360,7 +366,7 @@ function acceptReceipt(response: any, tx: string, eventType: string | undefined)
 }
 
 // Prop changes can switch actions while the checkbox remains open.
-watch(() => [open.value, props.type, props.params, props.sender, props.endpoint], initData, { flush: 'post' });
+watch(() => [open.value, props.type, props.params, props.sender, props.endpoint], initData, { flush: 'sync' });
 onUnmounted(invalidateDialog);
 </script>
 <template>

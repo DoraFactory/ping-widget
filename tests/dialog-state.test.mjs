@@ -9,11 +9,13 @@ import { ref, computed, watch, nextTick, reactive } from 'vue';
 const file = readFileSync('lib/components/TxDialog/index.vue','utf8');
 const source = file.match(/<script setup lang="ts">([\s\S]*?)<\/script>/)[1]
   .replace(/^import[\s\S]*?;\s*$/gm, '');
+const resultModule=await transform(readFileSync('lib/utils/transactionResult.ts','utf8'),{loader:'ts',format:'esm'});
+const {transactionResult}=await import('data:text/javascript;base64,'+Buffer.from(resultModule.code).toString('base64'));
 const { code } = await transform(source, { loader:'ts', target:'es2022' });
 function fixture(execute=async()=>{throw Error("Invalid request fields");}, reads={}) {
   const props = reactive({ type:'send', sender:'dora1test', endpoint:'test', params:'{}', registryName:'doravotatestnet' });
   const timers = new Map(), events = [], receipts = [], balances = []; let timerId=0;
-  const ctx = vm.createContext({ ref, computed, watch, nextTick, onUnmounted(){},
+  const ctx = vm.createContext({ transactionResult, ref, computed, watch, nextTick, onUnmounted(){},
     getAccount:async()=>({account:{account_number:'12',sequence:'0'}}),
     parseAccountNumber:Number,parseSequence:Number,readWallet:()=>({wallet:'Keplr'}),WalletName:{Keplr:'Keplr'},
     UniClient:class{async execute(...args){args[4]({title:'PQC approval',description:'Waiting'});return execute(...args);}},BroadcastRejectedError:class extends Error{},
@@ -34,8 +36,8 @@ function fixture(execute=async()=>{throw Error("Invalid request fields");}, read
 }
 test('successful send -> delegate always opens a clean form, including a different validator',async()=>{
   const f=fixture();f.api.open.value=true;await f.flush();
-  f.api.hash.value='ABC';f.api.showResult('ABC');f.tick();
-  f.receipts[0]({tx_response:{txhash:'ABC',height:'12',code:0}});await f.flush();
+  f.api.hash.value='A'.repeat(64);f.api.showResult('A'.repeat(64));f.tick();
+  f.receipts[0]({tx_response:{txhash:'A'.repeat(64),height:'12',code:0}});await f.flush();
   assert.equal(f.api.view.value,'submitting');assert.match(f.api.msg.value,/confirmed: send/);
   f.props.type='delegate';f.props.params='{"validator_address":"validator1"}';await f.flush();
   assert.equal(f.api.view.value,'input');assert.equal(f.api.hash.value,'');assert.equal(f.api.msg.value,'');assert.equal(f.api.step.value,0);
@@ -44,16 +46,16 @@ test('successful send -> delegate always opens a clean form, including a differe
 });
 test('old receipt and balance responses cannot overwrite a new action or account',async()=>{
   const f=fixture();f.api.open.value=true;await f.flush();
-  f.api.hash.value='OLD';f.api.showResult('OLD');f.tick();
+  f.api.hash.value='B'.repeat(64);f.api.showResult('B'.repeat(64));f.tick();
   f.props.type='delegate';f.props.sender='dora1other';await f.flush();
-  f.receipts[0]({tx_response:{txhash:'OLD',height:'12',code:0}});
+  f.receipts[0]({tx_response:{txhash:'B'.repeat(64),height:'12',code:0}});
   f.balances[0]({balances:[{denom:'stale',amount:'9'}]});await f.flush();
   assert.equal(f.api.msg.value,'');assert.equal(f.api.hash.value,'');assert.equal(f.api.view.value,'input');
   assert.equal(f.api.balance.value.length,0);assert.equal(f.events.length,0);assert.equal(f.timers.size,0);
 });
 test('closing cancels pending receipt timer and reopening the same action clears errors/results',async()=>{
   const f=fixture();f.api.open.value=true;await f.flush();
-  f.api.hash.value='OLD';f.api.showResult('OLD');assert.equal(f.timers.size,1);
+  f.api.hash.value='B'.repeat(64);f.api.showResult('B'.repeat(64));assert.equal(f.timers.size,1);
   f.api.open.value=false;await f.flush();assert.equal(f.timers.size,0);
   f.api.open.value=true;await f.flush();
   assert.equal(f.api.view.value,'input');assert.equal(f.api.hash.value,'');assert.equal(f.api.pending.value,false);
@@ -61,16 +63,16 @@ test('closing cancels pending receipt timer and reopening the same action clears
 
 test('included receipt finishes in the same dialog without adding a receipt timer',async()=>{
   const f=fixture();f.api.open.value=true;await f.flush();
-  f.api.view.value='processing';f.api.acceptReceipt({txhash:'NEW',height:'123',code:0},'NEW','delegate');
+  f.api.view.value='processing';f.api.acceptReceipt({txhash:'C'.repeat(64),height:'123',code:0},'C'.repeat(64),'delegate');
   assert.equal(f.api.view.value,'submitting');assert.equal(f.api.pending.value,false);
   assert.match(f.api.msg.value,/confirmed: delegate/);assert.equal(f.timers.size,0);
 });
 test('unconfirmed or mismatched receipts cannot show a successful result',async()=>{
   const f=fixture();f.api.open.value=true;await f.flush();
-  for(const response of [{txhash:'NEW',height:'0',code:0},{txhash:'OTHER',height:'12',code:0}])
-    assert.throws(()=>f.api.acceptReceipt(response,'NEW','delegate'),/not confirmed/);
+  for(const response of [{txhash:'C'.repeat(64),height:'0',code:0},{txhash:'D'.repeat(64),height:'12',code:0}])
+    assert.throws(()=>f.api.acceptReceipt(response,'C'.repeat(64),'delegate'),/not confirmed|mismatch/);
   assert.equal(f.events.length,0);assert.equal(f.api.msg.value,'');
-  f.api.acceptReceipt({txhash:'NEW',height:'12',code:5,raw_log:'out of gas'},'NEW','delegate');
+  f.api.acceptReceipt({txhash:'C'.repeat(64),height:'12',code:5,raw_log:'out of gas'},'C'.repeat(64),'delegate');
   assert.equal(f.api.pending.value,false);assert.equal(f.api.error.value,'out of gas');assert.equal(f.events.length,0);
 });
 
@@ -151,4 +153,26 @@ test('closing during submit checks prevents wallet invocation',async()=>{
  const pending=f.api.sendTx();f.api.open.value=false;await f.flush();
  resolve({balances:[{denom:'peaka',amount:'100'}]});await pending;
  assert.equal(f.executions(),0);
+});
+
+test('receipt UI rejects missing, malformed, unsafe and out-of-range heights and codes',async()=>{
+ const f=fixture();f.api.open.value=true;await f.flush();const hash='E'.repeat(64);
+ for(const height of [undefined,null,'bad','0','-1','1.5','1e3','9223372036854775808',9007199254740992])
+  assert.throws(()=>f.api.acceptReceipt({txhash:hash,height,code:0},hash,'delegate'));
+ for(const code of [undefined,null,'',false,'0.0',-1,4294967296])
+  assert.throws(()=>f.api.acceptReceipt({txhash:hash,height:'42',code},hash,'delegate'));
+ assert.equal(f.events.length,0);assert.equal(f.api.step.value,0);
+});
+test('broadcast callback binds the displayed result to local hash; mismatch remains pending',async()=>{
+ const hash='E'.repeat(64);
+ const f=fixture(async(...args)=>{args[5].onBroadcast(hash);return {tx_response:{txhash:'F'.repeat(64),height:'42',code:0}};});
+ f.api.open.value=true;await f.flush();f.api.chainId.value='test-chain';f.api.feeDenom.value='peaka';f.api.msgBox.value={isValid:{ok:true},msgs:[]};
+ await f.api.sendTx();assert.equal(f.api.hash.value,hash);assert.equal(f.api.pending.value,true);assert.equal(f.api.step.value,0);assert.equal(f.events.length,0);
+});
+test('closing the dialog invalidates the lifecycle guard given to the coordinator',async()=>{
+ let lifecycle,finish;const gate=new Promise(r=>finish=r);
+ const f=fixture(async(...args)=>{lifecycle=args[5];await gate;lifecycle.assertActive();});
+ f.api.open.value=true;await f.flush();f.api.chainId.value='test-chain';f.api.feeDenom.value='peaka';f.api.msgBox.value={isValid:{ok:true},msgs:[]};
+ const pending=f.api.sendTx();await f.flush();f.api.open.value=false;await f.flush();
+ assert.throws(()=>lifecycle.assertActive(),/cancelled/);finish();await pending;assert.equal(f.events.length,0);
 });

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { parseAccountNumber, parseSequence } from "../../utils/accountNumber";
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, watch, ref } from 'vue';
 import { Icon } from '@iconify/vue';
 import { fromBech32, toBech32, toHex } from '@cosmjs/encoding';
 import { sha256 } from '@cosmjs/crypto';
@@ -56,12 +56,16 @@ function switchView(v: string) {
 const direction = ref('buy');
 const sending = ref(false); // show status on send tx
 const open = ref(false);
+let operationRevision = 0;
+onUnmounted(() => { operationRevision++; });
 const error = ref('');
 const chains = ref([] as IBCPath[]);
 const osmosisPath = ref({} as IBCPath | undefined);
 const osmosisPathInfo = ref({} as IBCInfo);
 const defaultDenom = ref('');
 const sender = ref({} as ConnectedWallet);
+watch(() => [open.value, props.endpoint, sender.value?.cosmosAddress], () => { operationRevision++; }, {flush: 'sync'});
+
 const localBalances = ref([] as Coin[]);
 const osmoBalances = ref([] as Coin[]);
 const localChainInfo = ref({} as Chain);
@@ -428,6 +432,9 @@ const disableDeposit = computed(() => {
 });
 
 async function doDeposit() {
+    if (sending.value) return;
+    const revision = operationRevision;
+    const assertActive = () => { if (!open.value || revision !== operationRevision) throw Error('Operation cancelled before broadcast'); };
     sending.value = true;
 
     const address = localAddress(sender.value.cosmosAddress);
@@ -474,7 +481,7 @@ async function doDeposit() {
         const client = new UniClient(sender.value.wallet || WalletName.Keplr, { chainId });
 
         //   console.log("gasInfo:", gasInfo)
-        const response = await client.execute(props.endpoint, tx);
+        const response = await client.execute(props.endpoint, tx, undefined, undefined, undefined, {assertActive});
         if (response.tx_response?.code === 0) {
             setTimeout(async () => {
                 await getBalance(
@@ -496,7 +503,7 @@ async function doDeposit() {
     } catch (e) {
         sending.value = false;
         error.value = e;
-        setTimeout(() => (error.value = ''), 5000);
+        if (!(e as any)?.txhash) setTimeout(() => (error.value = ''), 5000);
     }
     sending.value = false;
 }

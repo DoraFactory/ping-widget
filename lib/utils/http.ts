@@ -23,6 +23,7 @@ async function readJson(url: string) {
 
 export async function post(url: string, data: any) {
     const response = await fetch(url, {
+        signal: AbortSignal.timeout(15000),
         method: 'POST', // *GET, POST, PUT, DELETE, etc.
         // mode: 'cors', // no-cors, *cors, same-origin
         // credentials: 'same-origin', // redirect: 'follow', // manual, *follow, error

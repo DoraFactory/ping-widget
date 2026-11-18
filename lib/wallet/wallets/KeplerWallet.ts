@@ -66,6 +66,7 @@ export class KeplerWallet implements AbstractWallet {
             typeUrl: "/cosmos.tx.v1beta1.TxBody",
             value: {
                 messages: transaction.messages,
+                timeoutHeight: transaction.timeoutHeight,
                 memo: transaction.memo,
             },
         };
@@ -106,7 +107,7 @@ export class KeplerWallet implements AbstractWallet {
         })
         const signMode = SignMode.SIGN_MODE_LEGACY_AMINO_JSON;
         const msgs = tx.messages.map((msg) => this.aminoTypes.toAmino(msg));
-        const signDoc = makeSignDocAmino(msgs, tx.fee, tx.chainId, tx.memo, tx.signerData.accountNumber, tx.signerData.sequence);
+        const signDoc = makeSignDocAmino(msgs, tx.fee, tx.chainId, tx.memo, tx.signerData.accountNumber, tx.signerData.sequence, tx.timeoutHeight);
         
         // @ts-ignore
         const offlineSigner = window.getOfflineSigner(this.chainId)
@@ -115,6 +116,7 @@ export class KeplerWallet implements AbstractWallet {
         const signedTxBody = {
             messages: signed.msgs.map((msg) => this.aminoTypes.fromAmino(msg)),
             memo: signed.memo,
+            timeoutHeight: BigInt(signed.timeout_height || "0"),
         };
         const signedTxBodyEncodeObject: TxBodyEncodeObject = {
             typeUrl: "/cosmos.tx.v1beta1.TxBody",

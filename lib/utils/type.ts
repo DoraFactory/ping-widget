@@ -41,7 +41,8 @@ export interface TxResponse {
   raw_log: string,
 }
 
-export interface Transaction { 
+export interface Transaction {
+  timeoutHeight?: bigint;
   chainId: string; 
   signerAddress: string; 
   messages: readonly EncodeObject[]; 

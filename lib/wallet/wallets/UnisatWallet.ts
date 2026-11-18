@@ -90,6 +90,7 @@ export class UnisatWallet implements AbstractWallet {
       typeUrl: "/cosmos.tx.v1beta1.TxBody",
       value: {
         messages: transaction.messages,
+        timeoutHeight: transaction.timeoutHeight,
         memo: transaction.memo,
       },
     };
@@ -153,7 +154,7 @@ export class UnisatWallet implements AbstractWallet {
       tx.chainId,
       tx.memo,
       tx.signerData.accountNumber,
-      tx.signerData.sequence
+      tx.signerData.sequence, tx.timeoutHeight
     );
 
     const signed = signDoc;
@@ -169,6 +170,7 @@ export class UnisatWallet implements AbstractWallet {
     const signedTxBody = {
       messages: signed.msgs.map((msg) => this.aminoTypes.fromAmino(msg)),
       memo: signed.memo,
+      timeoutHeight: BigInt(signed.timeout_height || "0"),
     };
 
     const signedTxBodyEncodeObject: TxBodyEncodeObject = {

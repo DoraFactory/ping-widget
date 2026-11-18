@@ -112,6 +112,28 @@ const feeDenom = ref('');
 const gasInfo = ref(200000);
 const memo = ref('');
 const chainId = ref('');
+const feeMode = ref<'checking' | 'manual' | 'signer' | 'unknown'>('checking');
+const manualFeesEdited = ref(false);
+const feeHint = computed(() => {
+    const zh = (window as any).doraPqcTransactions?.language?.() === 'zh';
+    if (feeMode.value === 'signer') return zh ? '请在 PQC 签名器中核对预计手续费。' : 'Review the estimated fee in PQC Signer.';
+    if (feeMode.value === 'unknown') return zh ? '暂时无法读取手续费设置。重新打开高级选项可重试。' : 'Fee settings are unavailable. Reopen advanced options to retry.';
+    return zh ? '正在查询手续费设置…' : 'Checking fee settings…';
+});
+watch([advance, open, chainId, () => props.sender, () => props.endpoint], async ([show, visible, chain, owner], _, onCleanup) => {
+    let current = true;
+    onCleanup(() => { current = false; });
+    feeMode.value = 'checking';
+    if (!show || !visible || !chain || !owner) return;
+    const bridge = (window as any).doraPqcTransactions;
+    if (chain !== 'vota-testnet' || !bridge?.feeMode) { feeMode.value = 'manual'; return; }
+    try {
+        const mode = await bridge.feeMode(owner);
+        if (current) feeMode.value = mode;
+    } catch {
+        if (current) feeMode.value = 'unknown';
+    }
+}, {flush: 'sync'});
 const formContext = computed(() => {
     const context = JSON.parse(props.params || '{}').form_context;
     return props.type === 'delegate' && context?.owner === props.sender && context?.endpoint === props.endpoint ? context : null;
@@ -135,7 +157,7 @@ async function initData() {
     error.value = ''; msg.value = ''; hash.value = '';
     progress.value = {title: '', description: ''};
     pending.value = false; delay.value = 0; step.value = 0;
-    sending.value = false; advance.value = false;
+    sending.value = false; advance.value = false; manualFeesEdited.value = false;
     loading.value = false; loadError.value = ''; pendingReads.value = []; balanceReady.value = false;
     balance.value = []; metadatas.value = {}; chainId.value = '';
     feeAmount.value = 2000; feeDenom.value = ''; gasInfo.value = 200000;
@@ -253,7 +275,7 @@ async function sendTx() {
         });
 
         const response = await client.execute(props.endpoint, tx, broadcast.value, async (tx) => {
-        if(!advance.value) {
+        if(!advance.value || feeMode.value !== 'manual') {
             await client.simulate(props.endpoint, tx, broadcast.value).then(gas => {
                 // update tx gas
                 tx.fee.gas = (gas * 1.25).toFixed()
@@ -270,6 +292,7 @@ async function sendTx() {
             if (!active()) return;
             progress.value = status; view.value = 'processing'; error.value = '';
         }, {
+            manualFeesEdited: manualFeesEdited.value,
             assertActive() { if (!active()) throw Error('Operation cancelled before broadcast'); },
             onBroadcast(txhash) { attemptedHash = txhash.toUpperCase(); },
         });
@@ -396,14 +419,15 @@ onUnmounted(invalidateDialog);
                             :metadata="metadatas" :params="props.params" />
                         <form class="space-y-6" action="#" method="POST">
                             <div :class="advance ? '' : 'hidden'">
-                                <div class="form-control">
+                                <p v-if="feeMode !== 'manual'" class="py-2 text-sm" role="status">{{ feeHint }}</p>
+                                <div v-if="feeMode === 'manual'" class="form-control">
                                     <label class="label">
                                         <span class="label-text">Fees</span>
                                     </label>
                                     <label class="input-group flex items-center">
-                                        <input v-model="feeAmount" type="text" placeholder="0.001"
+                                        <input v-model="feeAmount" @input="manualFeesEdited = true" type="text" placeholder="0.001"
                                             class="input border border-gray-300 dark:border-gray-600 flex-1 w-0 dark:text-gray-300" />
-                                        <select v-model="feeDenom"
+                                        <select v-model="feeDenom" @change="manualFeesEdited = true"
                                             class="select input border border-gray-300 dark:border-gray-600 w-[200px]">
                                             <option disabled selected>
                                                 Select Fee Token
@@ -414,11 +438,11 @@ onUnmounted(invalidateDialog);
                                         </select>
                                     </label>
                                 </div>
-                                <div class="form-control">
+                                <div v-if="feeMode === 'manual'" class="form-control">
                                     <label class="label">
                                         <span class="label-text">Gas</span>
                                     </label>
-                                    <input v-model="gasInfo" type="number" placeholder="2000000"
+                                    <input v-model="gasInfo" @input="manualFeesEdited = true" type="number" placeholder="2000000"
                                         class="input border border-gray-300 dark:border-gray-600 dark:text-gray-300" />
                                 </div>
                                 <div class="form-control">
@@ -428,11 +452,11 @@ onUnmounted(invalidateDialog);
                                     <input v-model="memo" type="text" placeholder="Memo"
                                         class="input border border-gray-300 dark:border-gray-600 dark:text-gray-300" />
                                 </div>
-                                <div class="form-control">
+                                <div v-if="feeMode === 'manual'" class="form-control">
                                     <label class="label">
                                         <span class="label-text">Broadcast Mode</span>
                                     </label>
-                                    <select v-model="broadcast"
+                                    <select v-model="broadcast" @change="manualFeesEdited = true"
                                         class="select input border border-gray-300 dark:border-gray-600 w-[200px]">
                                         <option :value="BroadcastMode.SYNC">Sync</option>
                                         <option :value="BroadcastMode.ASYNC">Async</option>

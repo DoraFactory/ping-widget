@@ -3,7 +3,7 @@ import { toBase64, fromBase64, toHex, fromBech32 } from "@cosmjs/encoding";
 import { EncodeObject, encodePubkey, Registry } from '@cosmjs/proto-signing'
 import { encodeSecp256k1Pubkey } from "@cosmjs/amino";
 import { defaultRegistryTypes } from "@cosmjs/stargate";
-import { AuthInfo, TxRaw } from "cosmjs-types/cosmos/tx/v1beta1/tx";
+import { AuthInfo, TxBody, TxRaw } from "cosmjs-types/cosmos/tx/v1beta1/tx";
 import { SignMode } from "cosmjs-types/cosmos/tx/signing/v1beta1/signing";
 import { AbstractWallet, WalletArgument, WalletName, createWallet } from "./Wallet";
 import { post, getTxByHash } from "../utils/http";
@@ -35,11 +35,11 @@ export class UniClient {
     async execute(endpoint: string, transaction: Transaction, mode = BroadcastMode.SYNC,
         prepareClassic: (tx: Transaction) => Promise<void> = async () => {},
         onProgress?: (status: {title: string; description: string}) => void,
-        lifecycle: {assertActive?: () => void; onBroadcast?: (hash: string) => void} = {}) {
+        lifecycle: {manualFeesEdited?: boolean; assertActive?: () => void; onBroadcast?: (hash: string) => void} = {}) {
         transaction = structuredClone(transaction);
         const assertActive = lifecycle.assertActive || (() => {});
         assertActive();
-        const classic = async (checkpoint?: (stage: string, details?: any) => Promise<void>) => {
+        const classic = async (checkpoint?: (stage: string, details?: any) => Promise<void | string>) => {
             const run = async () => {
                 const key = pendingTransactionKey(transaction.chainId, transaction.signerAddress);
                 // The host coordinator owns its journal; standalone callers use this one.
@@ -63,12 +63,19 @@ export class UniClient {
                 assertActive();
                 const tx = structuredClone(transaction);
                 await prepareClassic(tx); assertActive();
-                await checkpoint?.('sign'); assertActive();
+                const deadline = await checkpoint?.('sign'); assertActive();
+                if (typeof deadline === 'string') tx.timeoutHeight = BigInt(deadline);
                 const raw = structuredClone(await this.sign(tx)); assertActive();
                 const { sha256 } = await import('@cosmjs/crypto'); assertActive();
                 const hash = toHex(sha256(TxRaw.encode(raw).finish())).toUpperCase();
                 try {
-                    await checkpoint?.('broadcast', { hash }); assertActive();
+                    if (checkpoint) {
+                        const signers = AuthInfo.decode(raw.authInfoBytes).signerInfos;
+                        if (signers.length !== 1) throw Error('Expected a single transaction signer');
+                        await checkpoint('broadcast', { hash, sequence: signers[0].sequence.toString(),
+                            timeoutHeight: TxBody.decode(raw.bodyBytes).timeoutHeight.toString() });
+                    }
+                    assertActive();
                     storage?.setItem(key, JSON.stringify({owner: tx.signerAddress, chainId: tx.chainId, txhash: hash}));
                     lifecycle.onBroadcast?.(hash); assertActive();
                 } catch (cause) {
@@ -130,6 +137,7 @@ export class UniClient {
             typeUrl: "/cosmos.tx.v1beta1.TxBody",
             value: {
                 messages: transaction.messages,
+                timeoutHeight: transaction.timeoutHeight,
                 memo: transaction.memo,
             },
         };

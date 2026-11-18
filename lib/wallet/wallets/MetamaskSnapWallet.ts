@@ -73,6 +73,7 @@ export class MetamaskSnapWallet implements AbstractWallet {
             typeUrl: '/cosmos.tx.v1beta1.TxBody',
             value: {
                 messages: transaction.messages,
+                timeoutHeight: transaction.timeoutHeight,
                 memo: transaction.memo,
             },
         };
